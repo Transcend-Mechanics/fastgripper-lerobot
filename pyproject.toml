@@ -12,7 +12,7 @@ authors = [{name = "Transcend Mechanics"}]
 requires-python = ">=3.12"
 # The plugin subclasses non-guaranteed LeRobot internals (FeetechMotorsBus,
 # SOFollower): keep the pin narrow and bump it deliberately.
-dependencies = ["lerobot[feetech]>=0.6.1,<0.7"]
+dependencies = ["lerobot[feetech]>=0.6.0,<0.7"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "License :: OSI Approved :: Apache Software License",
