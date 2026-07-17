@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/transcendmechanics/fastgripper-lerobot"
+Repository = "https://github.com/Transcend-Mechanics/fastgripper-lerobot"
 
 [project.scripts]
 fastgripper = "lerobot_robot_fastgripper.cli:main"
