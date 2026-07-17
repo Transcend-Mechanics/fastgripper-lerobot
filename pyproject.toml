@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lerobot_robot_fastgripper"
+version = "0.1.0.dev0"
+description = "FastGripper: multi-turn worm-gear parallel gripper for the SO-101, as a turnkey LeRobot plugin"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [{name = "Transcend Mechanics"}]
+requires-python = ">=3.12"
+# The plugin subclasses non-guaranteed LeRobot internals (FeetechMotorsBus,
+# SOFollower): keep the pin narrow and bump it deliberately.
+dependencies = ["lerobot[feetech]>=0.6.1,<0.7"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Framework :: Robot Framework :: Library",
+]
+
+[project.urls]
+Repository = "https://github.com/transcendmechanics/fastgripper-lerobot"
+
+[project.scripts]
+fastgripper = "lerobot_robot_fastgripper.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["lerobot_robot_fastgripper*"]
