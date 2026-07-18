@@ -127,6 +127,9 @@ lerobot-record --robot.type=fastgripper_follower \
 (`fastgripper teleop` also passes any extra `lerobot-teleoperate` arguments
 straight through.)
 
+Next steps: [record a dataset](tutorial-record-dataset.md) toward training a
+policy, or [drive the gripper from Python](tutorial-python-api.md).
+
 ## If something's off
 
 - **First stop:** `fastgripper status` — pings all six servos and reports
@@ -142,5 +145,5 @@ straight through.)
   `--follower-port`/`--leader-port` to update the saved config.
 - **Arm is limp / won't hold position:** check the arm's power supply —
   USB powers only the driver board, not the servos.
-- Deeper diagnostics and the full servo-level story:
-  [multiturn-gripper-notes.md](multiturn-gripper-notes.md).
+- More failure modes and fixes: [troubleshooting](troubleshooting.md).
+  The full servo-level story: [how it works](how-it-works.md).

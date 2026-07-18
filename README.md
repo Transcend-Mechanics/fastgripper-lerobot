@@ -18,8 +18,9 @@ config. The robot type is `fastgripper_follower`.
 ## Quick start
 
 New to the SO-101 entirely? Follow the step-by-step
-**[quickstart guide](docs/QUICKSTART.md)** (box → teleop in ~30 min).
-The short version:
+**[quickstart guide](docs/site/quickstart.md)** (box → teleop in ~30 min).
+Full docs — tutorials, command reference, internals — live in
+**[docs/site/](docs/site/index.md)**. The short version:
 
 ```sh
 # one-time (gripper ships closed; the worm holds it there in transit)
