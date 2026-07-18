@@ -21,6 +21,26 @@ jobs:
       - run: uv pip install -p .venv/bin/python -e ".[dev]"
       - run: .venv/bin/pytest tests -q
 
+  package-smoke:
+    # the release path in miniature: build the wheel, install it in a clean
+    # venv, and prove lerobot discovers the plugin. Catches packaging breakage
+    # (missing files, broken entry points) without touching (Test)PyPI.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv build
+      - run: uv venv --python 3.12 .smoke
+      - run: uv pip install -p .smoke/bin/python dist/*.whl
+      - run: |
+          .smoke/bin/python -c "
+          from lerobot.utils.import_utils import register_third_party_plugins
+          from lerobot.robots.config import RobotConfig
+          register_third_party_plugins()
+          assert RobotConfig.get_choice_class('fastgripper_follower')
+          print('plugin discovery OK')"
+      - run: .smoke/bin/fastgripper --help
+
   test-lerobot-main:
     # tripwire: we subclass non-guaranteed lerobot internals
     runs-on: ubuntu-latest

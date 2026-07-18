@@ -27,6 +27,16 @@ doesn't exist yet; publishing creates and claims it):
    named `pypi` and `testpypi` (no secrets needed; optionally add yourself as
    a required reviewer on `pypi` so releases need a click of approval).
 
+## Routine packaging health (automatic)
+
+CI's `package-smoke` job already builds the wheel, installs it in a clean
+venv, and checks plugin discovery + the CLI on **every push** — so packaging
+breakage is caught continuously without publishing anything. TestPyPI is a
+*rehearsal of the publish step itself* (OIDC auth, upload), best used right
+before a real release rather than on a schedule: it permanently rejects
+re-uploads of the same version, so automating it would need artificial
+version churn for no extra signal.
+
 ## Dry run against TestPyPI (recommended before the first real release)
 
 1. GitHub → **Actions → Release → Run workflow** (leave branch = main).
