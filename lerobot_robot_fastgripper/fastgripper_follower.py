@@ -42,6 +42,10 @@ class FastGripperFollower(SOFollower):
             calibration=self.calibration,
             multiturn_motors=self.multiturn_motors,
         )
+        # True only after the multi-turn zero is established in THIS session
+        # (restore/assume/home). Parking without it would drive to a raw
+        # target that means nothing and save a false parked state.
+        self._gripper_zero_ok = False
 
     def connect(self, calibrate: bool = True) -> None:
         super().connect(calibrate)
@@ -62,7 +66,12 @@ class FastGripperFollower(SOFollower):
     def _gripper_state_fpath(self):
         return self.calibration_dir / f"{self.id}_gripper_state.json"
 
-    PARK_TOLERANCE_TICKS = 200   # worm can't backdrive; only reading jitter
+    # The worm can't backdrive, but cutting servo torque at disconnect lets
+    # gear backlash + the compliant linkage settle the READING by up to ~200
+    # ticks (observed live: 47/48/102/202 across sessions). 450 clears that
+    # with margin while still catching any real hand-move, which shows up as
+    # hundreds-to-thousands of ticks (~450 ticks is only ~2% of the stroke).
+    PARK_TOLERANCE_TICKS = 450
     PARK_TIMEOUT_S = 15.0        # full stroke at speed is ~7 s
 
     def restore_gripper_from_parked(self) -> None:
@@ -121,10 +130,29 @@ class FastGripperFollower(SOFollower):
 
     def disconnect(self) -> None:
         if self.config.park_gripper_closed_on_disconnect:
-            try:
-                self.park_gripper()
-            except Exception:
-                logger.warning("Gripper parking failed; next start may need manual close", exc_info=True)
+            if not self._gripper_zero_ok:
+                # Never park on an unestablished zero: the raw target would be
+                # meaningless (blind motion) and the saved state a false claim.
+                # Seen live: a failed 'auto' restore followed by park drove the
+                # gripper ~1000 ticks and overwrote a stale-but-honest state.
+                logger.warning(
+                    "Skipping gripper park: zero was never established this "
+                    "session. Close the gripper (fastgripper jog) and re-run "
+                    "`fastgripper setup` before the next session."
+                )
+            else:
+                try:
+                    self.park_gripper()
+                except Exception:
+                    # The state file now describes a position we failed to
+                    # reach — an honest "unknown" beats a wrong claim.
+                    self._gripper_state_fpath.unlink(missing_ok=True)
+                    logger.warning(
+                        "Gripper parking failed; cleared parked state. Close the "
+                        "gripper and re-run `fastgripper setup` before the next "
+                        "session.",
+                        exc_info=True,
+                    )
         try:
             super().disconnect()
         except RuntimeError:
@@ -261,6 +289,7 @@ class FastGripperFollower(SOFollower):
         )
         self.bus.write_calibration(self.calibration)
         self._save_calibration()
+        self._gripper_zero_ok = True
 
     def home_gripper(self) -> None:
         """Find the closed hard stop by stall detection and re-seed the
@@ -379,3 +408,4 @@ class FastGripperFollower(SOFollower):
         )
         bus.write_calibration(self.calibration)
         self._save_calibration()
+        self._gripper_zero_ok = True

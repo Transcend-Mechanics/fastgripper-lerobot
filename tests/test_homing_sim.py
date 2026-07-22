@@ -212,6 +212,54 @@ def test_auto_rejects_moved_gripper(rig, tmp_path):
         robot.restore_gripper_from_parked()
 
 
+def test_auto_tolerates_torque_off_settle_drift(rig, tmp_path):
+    """Cutting torque at disconnect lets the reading settle up to ~200 ticks
+    (seen live: boot 1846 vs parked 2048). That must NOT read as 'moved'."""
+    sim = ServoSim(pos=1846)
+    robot = rig(sim)
+    robot._gripper_state_fpath.parent.mkdir(parents=True, exist_ok=True)
+    robot._gripper_state_fpath.write_text(json.dumps({"parked_raw": 2048}))
+    robot.restore_gripper_from_parked()
+    assert robot.calibration["gripper"].range_min == 2048
+
+
+def test_disconnect_after_failed_restore_skips_park(rig, tmp_path):
+    """Live failure 2026-07-21: a failed 'auto' restore was followed by a
+    blind park that moved the gripper ~1000 ticks and overwrote the state
+    file with a false claim. Without an established zero, disconnect must
+    neither move the motor nor touch the state file."""
+    sim = ServoSim(pos=5000)
+    robot = rig(sim)
+    robot._gripper_state_fpath.parent.mkdir(parents=True, exist_ok=True)
+    robot._gripper_state_fpath.write_text(json.dumps({"parked_raw": 2048}))
+    robot.calibration["gripper"] = MotorCalibration(
+        id=6, drive_mode=0, homing_offset=0, range_min=2048, range_max=21248
+    )
+    with pytest.raises(RuntimeError, match="moved by hand"):
+        robot.restore_gripper_from_parked()
+
+    with patch("lerobot_robot_fastgripper.fastgripper_follower.SOFollower.disconnect"):
+        robot.disconnect()
+
+    assert sim.pos == 5000  # no blind motion
+    assert json.loads(robot._gripper_state_fpath.read_text()) == {"parked_raw": 2048}
+
+
+def test_disconnect_park_failure_clears_state(rig, tmp_path):
+    """If parking dies mid-move (e.g. USB drop), the state file no longer
+    describes reality — it must be removed, not left as a stale claim."""
+    sim = ServoSim(pos=9000)
+    robot = rig(sim)
+    robot.assume_gripper_closed()
+    assert robot._gripper_state_fpath.exists()
+
+    patch.object(robot.bus, "read", side_effect=ConnectionError("no status packet")).start()
+    with patch("lerobot_robot_fastgripper.fastgripper_follower.SOFollower.disconnect"):
+        robot.disconnect()
+
+    assert not robot._gripper_state_fpath.exists()
+
+
 def test_auto_without_state_gives_setup_guidance(rig, tmp_path):
     sim = ServoSim(pos=2048)
     robot = rig(sim)
