@@ -205,27 +205,25 @@ class FastGripperFollower(SOFollower):
         homing_offsets = self.bus.set_half_turn_homings(arm_motors)
         homing_offsets.update(dict.fromkeys(self.multiturn_motors, 0))
 
+        # The gripper is NOT range-recorded: the worm can't be back-driven by
+        # hand, so its min==max would fail LeRobot's validation (seen live).
+        # Its calibrated range comes from the established zero instead —
+        # identical to what assume_gripper_closed()/setup writes.
         full_turn_motor = "wrist_roll"
-        unknown_range_motors = [m for m in self.bus.motors if m != full_turn_motor]
+        unknown_range_motors = [
+            m for m in self.bus.motors if m != full_turn_motor and m not in self.multiturn_motors
+        ]
         print(
-            f"Move all joints except '{full_turn_motor}' sequentially through their entire "
-            "ranges of motion.\nFor the gripper, turn the worm knob through the FULL stroke, "
-            "open to closed (several turns).\nRecording positions. Press ENTER to stop..."
+            f"Move all arm joints except '{full_turn_motor}' sequentially through their entire "
+            "ranges of motion.\n(Leave the gripper alone — it is calibrated by "
+            "`fastgripper setup`, not here.)\nRecording positions. Press ENTER to stop..."
         )
         range_mins, range_maxes = self.bus.record_ranges_of_motion(unknown_range_motors)
         range_mins[full_turn_motor] = 0
         range_maxes[full_turn_motor] = 4095
-
         for motor in self.multiturn_motors:
-            stroke = range_maxes[motor] - range_mins[motor]
-            if stroke < 4096:
-                logger.warning(
-                    "Gripper stroke recorded as %d ticks (< 1 turn). Multi-turn feedback may "
-                    "not be active, or the knob was not turned through the full stroke. "
-                    "Expected roughly %d ticks.",
-                    stroke,
-                    self.config.gripper_stroke_ticks,
-                )
+            range_mins[motor] = self.HOME_SEED
+            range_maxes[motor] = self.HOME_SEED + self.config.gripper_stroke_ticks
 
         self.calibration = {}
         for motor, m in self.bus.motors.items():
