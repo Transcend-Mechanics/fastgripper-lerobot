@@ -374,13 +374,19 @@ class FastGripperFollower(SOFollower):
 
         # Relieve pressure, settle, then re-seed the counter at the backed-off
         # position: closed stop reads ~HOME_SEED.
-        bus.write(
-            "Goal_Position",
-            motor,
-            stall_pos - self.config.gripper_close_direction * self.HOMING_BACKOFF_TICKS,
-            normalize=False,
+        backoff_target = (
+            stall_pos - self.config.gripper_close_direction * self.HOMING_BACKOFF_TICKS
         )
-        time.sleep(0.6)
+        bus.write("Goal_Position", motor, backoff_target, normalize=False)
+        # WAIT for the back-off to finish before re-seeding. A fixed short sleep
+        # cuts the move off after a blip: at HOMING_VELOCITY a full backoff takes
+        # longer than 0.6 s (e.g. 600 ticks @ 500 = 1.2 s), and reseed_position
+        # freezes the reading wherever it landed. Poll to completion instead.
+        deadline = time.time() + self.HOMING_BACKOFF_TICKS / max(self.HOMING_VELOCITY, 1) + 2.0
+        while time.time() < deadline:
+            if abs(bus.read("Present_Position", motor, normalize=False) - backoff_target) <= 40:
+                break
+            time.sleep(0.05)
         bus.clear_overload(motor)  # error-tolerant torque-off
         seeded = bus.reseed_position(motor)
         logger.info("Gripper homed: stall at %d, re-seeded to %d", stall_pos, seeded)
