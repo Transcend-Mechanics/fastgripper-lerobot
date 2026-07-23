@@ -71,9 +71,10 @@ position is the reference that makes the other ~4.8 turns meaningful, and
 because the worm gear holds position with power off, that reference stays
 trustworthy across every power cycle from now on.
 
-If the gripper is *not* closed (someone jogged it open earlier), close it
-first: `fastgripper jog`, hold `a` (closing direction; `d` opens) until the
-load guard stops it, `q` to quit, then re-run setup.
+If the gripper is *not* closed (or you're not sure), answer `g` instead —
+setup walks you through closing it: hold `a` to drive toward closed, it
+stops itself at the hard stop, press `c` to confirm, and setup continues
+from there.
 
 ## 4. Calibrate the arms (once)
 

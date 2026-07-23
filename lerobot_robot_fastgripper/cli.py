@@ -15,10 +15,26 @@ import argparse
 import json
 import os
 import pathlib
+import signal
 import subprocess
 import sys
 
 CONFIG_PATH = pathlib.Path.home() / ".config" / "fastgripper" / "config.json"
+
+
+def _run_child(cmd: list[str]) -> int:
+    """Run a lerobot CLI as a child, letting IT own Ctrl-C.
+
+    Ctrl-C hits the whole terminal group. If this wrapper dies on the same
+    SIGINT, it disrupts the child's shutdown — which includes the ~2 s
+    park-gripper-closed drive (found live: auto-park never ran under
+    `fastgripper teleop`, only under bare lerobot-teleoperate). Ignore
+    SIGINT here and wait for the child to finish its cleanup."""
+    prev = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        return subprocess.call(cmd)
+    finally:
+        signal.signal(signal.SIGINT, prev)
 
 
 def _load_config(require: bool = True) -> dict:
@@ -48,13 +64,18 @@ def cmd_setup(args) -> None:
     print(f"Saved config to {CONFIG_PATH}: {cfg}")
 
     print(
-        "\nEstablishing the gripper zero. The gripper must be FULLY CLOSED right now\n"
-        "(factory grippers ship closed — the worm holds them there; otherwise close it\n"
-        "with `fastgripper jog` first)."
+        "\nEstablishing the gripper zero. The gripper must be FULLY CLOSED\n"
+        "(factory grippers ship closed — the worm holds them there)."
     )
-    resp = input("Is the gripper fully closed? [y/N] ").strip().lower()
-    if resp != "y":
-        print("Close it (fastgripper jog, slow, until the guard stops), then re-run setup.")
+    resp = input("Is the gripper fully closed? [y = yes / g = guide me there / N = abort] ").strip().lower()
+    if resp == "g":
+        from . import jog
+
+        if not jog.guided_close(cfg["follower_port"]):
+            print("Setup not completed — re-run `fastgripper setup` when ready.")
+            return
+    elif resp != "y":
+        print("Re-run `fastgripper setup` and choose 'g' to be walked to the closed stop.")
         return
 
     from .config_fastgripper_follower import FastGripperFollowerConfig
@@ -82,7 +103,7 @@ def cmd_calibrate(args) -> None:
                "--robot.type=fastgripper_follower",
                f"--robot.port={cfg['follower_port']}",
                f"--robot.id={cfg['follower_id']}"]
-    raise SystemExit(subprocess.call(cmd))
+    raise SystemExit(_run_child(cmd))
 
 
 def cmd_jog(args) -> None:
@@ -109,7 +130,7 @@ def cmd_teleop(args, extra: list[str]) -> None:
            f"--teleop.port={cfg['leader_port']}",
            f"--teleop.id={cfg['leader_id']}",
            *extra]
-    raise SystemExit(subprocess.call(cmd))
+    raise SystemExit(_run_child(cmd))
 
 
 def cmd_status(args) -> None:

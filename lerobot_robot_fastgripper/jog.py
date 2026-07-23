@@ -156,6 +156,90 @@ def read_key():
     return None
 
 
+def guided_close(port: str, motor_id: int = DEFAULT_ID) -> bool:
+    """Interactive close-to-the-stop used by `fastgripper setup`.
+
+    Drives the gripper at the gentle survey speed under the load guard until
+    it reaches the closed hard stop, asks the user to confirm, and ends with
+    torque off at the stop (exactly the state setup needs). Returns True
+    only on explicit confirmation."""
+    if not sys.stdin.isatty():
+        raise SystemExit("The guided close needs a real terminal (not a piped shell).")
+    servo = Servo(port, motor_id)
+    import scservo_sdk as _scs
+
+    _, comm, _ = servo.ph.ping(servo.po, servo.id)
+    if comm != _scs.COMM_SUCCESS:
+        servo.po.closePort()
+        raise SystemExit(
+            f"No response from servo id {motor_id} on {port} — check power and cabling."
+        )
+    servo.setup_multiturn()
+    servo.write("Goal_Velocity", VEL_SLOW)
+    servo.write("Torque_Enable", 1)
+    print(
+        "\nGuided close — let's put the gripper at its closed stop:\n"
+        "  HOLD 'a' to drive toward closed (release to stop; it also stops\n"
+        "  by itself at the hard stop). If it moves the wrong way, use 'd'.\n"
+        "  When the jaw is fully closed, press 'c' to confirm. 'q' aborts.\n"
+    )
+    confirmed = False
+    direction = 0
+    over_since = None
+    last_jog_key = 0.0
+    guard_announced = False
+    old_term = termios.tcgetattr(sys.stdin)
+    tty.setcbreak(sys.stdin.fileno())
+    try:
+        while True:
+            t0 = time.monotonic()
+            key = read_key()
+            if key in ("a", "A", "d", "D"):
+                direction = -1 if key.lower() == "a" else 1
+                last_jog_key = t0
+            elif key == " ":
+                direction = 0
+            elif key in ("c", "C"):
+                confirmed = True
+                break
+            elif key in ("q", "Q"):
+                break
+            if direction != 0 and t0 - last_jog_key > HOLD_TIMEOUT_S:
+                direction = 0
+            servo.reseed_if_needed()
+            pos, err = servo.pos()
+            load = servo.load()
+            if direction != 0:
+                if load > LOAD_LIMIT_SLOW:
+                    if over_since is None:
+                        over_since = time.monotonic()
+                    elif time.monotonic() - over_since > LOAD_TRIP_S:
+                        direction = 0
+                        over_since = None
+                        if not guard_announced:
+                            print("\n>> That's the stop. If the jaw is fully closed, press 'c'.")
+                            guard_announced = True
+                else:
+                    over_since = None
+                servo.goal(pos + direction * JOG_LEAD)
+            else:
+                over_since = None
+                servo.goal(pos)  # hold
+            if err:
+                servo.unlatch()
+                servo.write("Torque_Enable", 1)
+            state = "closing" if direction < 0 else ("opening" if direction > 0 else "idle   ")
+            print(f"\r  pos {pos:+8d}t  load {load:4d}  [{state}] ", end="", flush=True)
+            time.sleep(max(0.0, 1.0 / LOOP_HZ - (time.monotonic() - t0)))
+    except KeyboardInterrupt:
+        pass
+    finally:
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_term)
+        servo.close()
+    print("\nClosed position confirmed." if confirmed else "\nGuided close aborted — nothing changed.")
+    return confirmed
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter

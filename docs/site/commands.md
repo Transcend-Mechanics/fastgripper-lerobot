@@ -13,8 +13,9 @@ fastgripper setup --follower-port PORT [--follower-id ID] \
 ```
 
 One-time. Saves ports/ids to the config file, then establishes the gripper
-zero: it asks you to confirm the gripper is fully closed, connects, records
-the closed position as 0, and parks. IDs default to `follower_1` /
+zero: it asks whether the gripper is fully closed — answer `y`, or `g` for
+a guided close (hold `a`, it stops at the hard stop, press `c` to confirm)
+— then connects, records the closed position as 0, and parks. IDs default to `follower_1` /
 `leader_1` — the ID names the calibration files, so keep it stable per arm.
 
 Re-run it any time a port changes; already-saved values are kept unless you

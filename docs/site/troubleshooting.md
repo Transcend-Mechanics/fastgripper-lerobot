@@ -35,9 +35,9 @@ unplug the chain from the board and re-add segments until it reappears.
 
 **"…likely moved by hand while off" on connect.** The plugin verified the
 boot position against where it parked and they disagree — someone turned
-the drive while unpowered, or the servo was swapped. Recovery is two
-commands: `fastgripper jog` (hold `a` until the load guard stops it at
-fully closed, `q`), then `fastgripper setup` to re-establish zero.
+the drive while unpowered, the servo was swapped, or a previous session
+crashed before parking. Recovery is one command: `fastgripper setup`,
+answer `g`, and it walks you through re-closing and re-zeroing.
 
 **Gripper won't move by hand.** Correct — the worm gear self-locks and
 cannot be back-driven. Never force it; use `fastgripper jog`.
