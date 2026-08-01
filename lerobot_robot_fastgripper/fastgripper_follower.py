@@ -62,6 +62,32 @@ class FastGripperFollower(SOFollower):
                 "(expected 'auto', 'stall', 'assume_closed', or 'off')"
             )
 
+    # A single transient sync-read glitch otherwise crashes teleop outright:
+    # LeRobot's read path has no retry tolerance ("after 1 tries"), so one
+    # garbled Present_Position transaction is fatal -- even though every servo
+    # is healthy and answers a ping a millisecond later. On this hardware the
+    # glitch coincides with the high-current worm-gripper servo starting to
+    # move (electrical noise coupled onto the shared half-duplex bus). The read
+    # is idempotent, so retry a few times before propagating the failure.
+    READ_RETRIES = 4
+    READ_RETRY_DELAY_S = 0.002
+
+    def get_observation(self):
+        last_exc = None
+        for attempt in range(self.READ_RETRIES):
+            try:
+                obs = super().get_observation()
+                if attempt:
+                    logger.warning(
+                        "%s: recovered Present_Position read after %d retr%s",
+                        self, attempt, "y" if attempt == 1 else "ies",
+                    )
+                return obs
+            except ConnectionError as e:
+                last_exc = e
+                time.sleep(self.READ_RETRY_DELAY_S)
+        raise last_exc
+
     @property
     def _gripper_state_fpath(self):
         return self.calibration_dir / f"{self.id}_gripper_state.json"
