@@ -47,6 +47,12 @@ mismatch and tells you exactly what to do.
 | `fastgripper jog` | keyboard jog + live load/torque survey |
 | `fastgripper teleop` | teleoperate with the saved setup (extra lerobot args pass through) |
 | `fastgripper status` | servo, calibration, and parked-state health check |
+| `fastgripper preflight` | go/no-go before a session (run automatically by `teleop`) |
+| `fastgripper usb soak\|watch` | USB link diagnostics — see [USB serial drops](docs/troubleshooting/usb-serial-drops.md) |
+
+**Teleop dying with "Device not configured" / "no status packet"?** That is
+the USB link (hub, cable, USB power), not the gripper:
+[docs/troubleshooting/usb-serial-drops.md](docs/troubleshooting/usb-serial-drops.md).
 
 Plain LeRobot commands work too (`lerobot-record`, `lerobot-train`, …) with
 `--robot.type=fastgripper_follower`.

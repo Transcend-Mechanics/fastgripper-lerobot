@@ -8,6 +8,8 @@ Subcommands:
     status     health check: servo, calibration, parked state
     preflight  go/no-go: ports, servos, voltages, stale turn counters,
                calibration files, parked state, trigger calibration
+    usb        link diagnostics: `usb soak` (60 Hz read soak, no motion)
+               and `usb watch` (log device drops during teleop)
 
 Ports/ids are stored once (by `setup`) in ~/.config/fastgripper/config.json,
 so daily use is just `fastgripper teleop`.
@@ -174,6 +176,18 @@ def cmd_teleop(args, extra: list[str]) -> None:
     raise SystemExit(_run_child(cmd))
 
 
+def cmd_usb(args) -> None:
+    cfg = _resolve_target(args)
+    from . import usb
+
+    ports = {"follower": cfg["follower_port"]}
+    if cfg.get("leader_port"):
+        ports["leader"] = cfg["leader_port"]
+    if args.usb_cmd == "soak":
+        raise SystemExit(usb.cmd_soak(ports, args.seconds))
+    usb.cmd_watch(ports)
+
+
 def cmd_preflight(args) -> None:
     cfg = _resolve_target(args)
     from .preflight import run_preflight
@@ -242,6 +256,14 @@ def main() -> None:
     p = sub.add_parser("status", help="servo/calibration/state health check")
     _add_target_args(p)
 
+    p = sub.add_parser("usb", help="USB link diagnostics: soak (read both arms at 60 Hz) / watch (log device drops)")
+    usub = p.add_subparsers(dest="usb_cmd", required=True)
+    ps = usub.add_parser("soak", help="60 Hz sync-read soak on leader+follower, no motion (ports must be free)")
+    ps.add_argument("--seconds", type=float, default=30)
+    _add_target_args(ps)
+    pw = usub.add_parser("watch", help="log every serial-device drop/return; run DURING teleop")
+    _add_target_args(pw)
+
     p = sub.add_parser("preflight", help="go/no-go check of ports, servos, calibration, park, trigger")
     p.add_argument("--trigger", action="store_true",
                    help="also verify the trigger reaches 0%% squeezed / 100%% released (prompts you)")
@@ -260,6 +282,8 @@ def main() -> None:
         cmd_status(args)
     elif args.cmd == "preflight":
         cmd_preflight(args)
+    elif args.cmd == "usb":
+        cmd_usb(args)
 
 
 if __name__ == "__main__":

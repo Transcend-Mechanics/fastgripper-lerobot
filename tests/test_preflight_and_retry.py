@@ -307,3 +307,20 @@ def test_leader_reconnects_when_timeouts_persist(tmp_path):
          patch("lerobot_robot_fastgripper.fastgripper_leader.time.sleep"):
         assert leader.get_action() == {"gripper.pos": 7.0}
     leader.bus.port_handler.openPort.assert_called()
+
+
+def test_usb_soak_classification():
+    from lerobot_robot_fastgripper.usb import classify
+    assert classify(1000, 0, "") == "OK"
+    assert classify(1000, 5, "") == "OK"          # <1% failed reads
+    assert classify(1000, 50, "") == "WARN"       # >1%
+    assert classify(0, 0, "ABSENT at start") == "FAIL"
+    assert classify(12, 3, "VANISHED at 0.5s") == "FAIL"
+    assert classify(0, 0, "") == "FAIL"           # never answered
+
+
+def test_usb_subcommands_parse():
+    import subprocess, sys
+    out = subprocess.run([sys.executable, "-m", "lerobot_robot_fastgripper.cli", "usb", "--help"],
+                         capture_output=True, text=True)
+    assert out.returncode == 0 and "soak" in out.stdout and "watch" in out.stdout

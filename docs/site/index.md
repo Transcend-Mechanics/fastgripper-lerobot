@@ -24,7 +24,8 @@ pip install "lerobot[feetech]" lerobot_robot_fastgripper
 | [Tutorial: record a dataset](tutorial-record-dataset.md) | Teleop → recorded episodes → replay, the path to training policies. |
 | [Tutorial: Python control](tutorial-python-api.md) | Drive the gripper from your own code, no teleop. |
 | [How it works](how-it-works.md) | The multi-turn servo problem and how the plugin solves it. For the robotics-minded. |
-| [Troubleshooting](troubleshooting.md) | When something's off. Start with `fastgripper status`. |
+| [Troubleshooting](troubleshooting.md) | When something's off. Start with `fastgripper preflight`. |
+| [USB serial drops](../troubleshooting/usb-serial-drops.md) | Teleop dies with "Device not configured" / "no status packet". Hub, cable, or USB power — not the gripper. |
 
 ## Source and support
 
