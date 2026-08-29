@@ -256,3 +256,26 @@ def test_handshake_does_not_retry_other_errors(tmp_path):
     with patch("lerobot.motors.feetech.FeetechMotorsBus._handshake", side_effect=RuntimeError("firmware mismatch")):
         with pytest.raises(RuntimeError, match="firmware"):
             bus._handshake()
+
+
+def test_leader_get_action_reconnects_on_termios_error(tmp_path):
+    import termios
+    cfg = FastGripperLeaderConfig(port="/dev/null", id="t", calibration_dir=tmp_path,
+                                  read_retry_delay_s=0, reconnect_timeout_s=2.0)
+    leader = FastGripperLeader(cfg)
+    calls = {"n": 0}
+
+    def flush_fails_then_ok(_reg):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise termios.error(6, "Device not configured")   # from tcdrain() on a dead fd
+        return {"gripper": 5.0}
+
+    leader.bus = MagicMock()
+    leader.bus.sync_read.side_effect = flush_fails_then_ok
+    leader.bus.motors = {"gripper": None}
+    leader.bus.port_handler.openPort.return_value = True
+    leader.bus.port_handler.setBaudRate.return_value = True
+    with patch.object(type(leader), "is_connected", new=property(lambda self: True)), \
+         patch("lerobot_robot_fastgripper.fastgripper_leader.time.sleep"):
+        assert leader.get_action() == {"gripper.pos": 5.0}

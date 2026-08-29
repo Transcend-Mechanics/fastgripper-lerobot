@@ -17,6 +17,7 @@ in the meantime.
 
 import logging
 import os
+import termios
 import time
 
 from lerobot.teleoperators.so_leader import SOLeader
@@ -49,7 +50,9 @@ class FastGripperLeader(SOLeader):
             except ConnectionError as e:
                 last_exc = e
                 time.sleep(self.config.read_retry_delay_s)
-            except OSError as e:          # pyserial SerialException is an OSError
+            except (OSError, termios.error) as e:
+                # pyserial's SerialException is an OSError; a flush on a
+                # vanished device raises termios.error, which is NOT.
                 last_exc = e
                 if self._reconnect():
                     continue
