@@ -32,7 +32,15 @@ def _run_child(cmd: list[str]) -> int:
     SIGINT here and wait for the child to finish its cleanup."""
     prev = signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
-        return subprocess.call(cmd)
+        # SIG_IGN is inherited across exec, and Python only installs its
+        # KeyboardInterrupt handler when SIGINT is NOT already ignored -- so a
+        # child spawned after the line above would be immune to Ctrl-C forever
+        # (seen live: teleop could not be stopped, park never ran). Restore the
+        # default disposition in the child before it execs.
+        proc = subprocess.Popen(
+            cmd, preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL)
+        )
+        return proc.wait()
     finally:
         signal.signal(signal.SIGINT, prev)
 
@@ -48,6 +56,32 @@ def _load_config(require: bool = True) -> dict:
 def _save_config(cfg: dict) -> None:
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
+
+
+TARGET_KEYS = ("follower_port", "follower_id", "leader_port", "leader_id")
+
+
+def _add_target_args(p, leader: bool = True) -> None:
+    p.add_argument("--follower-port", help="target this follower port (overrides saved config)")
+    p.add_argument("--follower-id", help="target this follower id (overrides saved config)")
+    if leader:
+        p.add_argument("--leader-port", help="target this leader port (overrides saved config)")
+        p.add_argument("--leader-id", help="target this leader id (overrides saved config)")
+
+
+def _resolve_target(args) -> dict:
+    """Saved config overlaid with any --follower-*/--leader-* flags for THIS
+    invocation only (nothing is written back — only `setup` persists)."""
+    cfg = _load_config(require=False)
+    for key in TARGET_KEYS:
+        val = getattr(args, key, None)
+        if val:
+            cfg[key] = val
+    missing = [k for k in ("follower_port", "follower_id") if not cfg.get(k)]
+    if missing:
+        raise SystemExit(f"Missing {missing} — run `fastgripper setup` or pass "
+                         "--follower-port/--follower-id.")
+    return cfg
 
 
 def cmd_setup(args) -> None:
@@ -92,7 +126,7 @@ def cmd_setup(args) -> None:
 
 
 def cmd_calibrate(args) -> None:
-    cfg = _load_config()
+    cfg = _resolve_target(args)
     if args.leader:
         cmd = ["lerobot-calibrate",
                "--teleop.type=so101_leader",
@@ -107,7 +141,7 @@ def cmd_calibrate(args) -> None:
 
 
 def cmd_jog(args) -> None:
-    cfg = _load_config()
+    cfg = _resolve_target(args)
     from . import jog
 
     sys.argv = ["fastgripper-jog", "--port", cfg["follower_port"]]
@@ -117,11 +151,11 @@ def cmd_jog(args) -> None:
 
 
 def cmd_teleop(args, extra: list[str]) -> None:
-    cfg = _load_config()
+    cfg = _resolve_target(args)
     for key in ("leader_port", "leader_id"):
         if not cfg.get(key):
             raise SystemExit(f"Config missing {key} — re-run `fastgripper setup` with "
-                             "--leader-port/--leader-id.")
+                             "--leader-port/--leader-id (or pass it to teleop directly).")
     cmd = ["lerobot-teleoperate",
            "--robot.type=fastgripper_follower",
            f"--robot.port={cfg['follower_port']}",
@@ -134,8 +168,8 @@ def cmd_teleop(args, extra: list[str]) -> None:
 
 
 def cmd_status(args) -> None:
-    cfg = _load_config()
-    print(f"config: {cfg}")
+    cfg = _resolve_target(args)
+    print(f"target: {cfg}")
     from lerobot.motors import Motor, MotorNormMode
     from lerobot.motors.feetech import FeetechMotorsBus
 
@@ -174,19 +208,23 @@ def main() -> None:
 
     p = sub.add_parser("setup", help="one-time setup: save ports and establish gripper zero")
     p.add_argument("--follower-port")
-    p.add_argument("--follower-id", default="follower_1")
-    p.add_argument("--leader-port")
-    p.add_argument("--leader-id", default="leader_1")
+    p.add_argument("--follower-id")   # no defaults: a bare `setup` must NOT silently
+    p.add_argument("--leader-port")   # rename the saved arms (it did, once)
+    p.add_argument("--leader-id")
 
     p = sub.add_parser("calibrate", help="arm calibration (follower by default)")
     p.add_argument("--leader", action="store_true", help="calibrate the leader instead")
+    _add_target_args(p)
 
     p = sub.add_parser("jog", help="keyboard jog + torque survey")
     p.add_argument("--status", action="store_true", help="one-line health probe, no jogging")
+    _add_target_args(p, leader=False)
 
-    sub.add_parser("teleop", help="teleoperate (extra lerobot-teleoperate args pass through)")
+    p = sub.add_parser("teleop", help="teleoperate (extra lerobot-teleoperate args pass through)")
+    _add_target_args(p)
 
-    sub.add_parser("status", help="servo/calibration/state health check")
+    p = sub.add_parser("status", help="servo/calibration/state health check")
+    _add_target_args(p)
 
     args, extra = parser.parse_known_args()
     if args.cmd == "setup":
