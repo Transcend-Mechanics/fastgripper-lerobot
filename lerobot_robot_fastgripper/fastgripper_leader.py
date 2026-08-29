@@ -38,6 +38,7 @@ class FastGripperLeader(SOLeader):
     def get_action(self) -> dict[str, float]:
         last_exc: Exception | None = None
         retries = max(1, int(self.config.read_retries))
+        self._reconnected_once = False
         for attempt in range(retries):
             try:
                 action = super().get_action()
@@ -50,6 +51,17 @@ class FastGripperLeader(SOLeader):
             except ConnectionError as e:
                 last_exc = e
                 time.sleep(self.config.read_retry_delay_s)
+                # A vanished device often shows up as read TIMEOUTS ("no
+                # status packet") before the fd errors (live 2026-08-29
+                # 13:05). If plain retries are exhausted, treat it as a
+                # possible re-enumeration and try a reconnect once.
+                if attempt == retries - 1 and not self._reconnected_once:
+                    self._reconnected_once = True
+                    if self._reconnect():
+                        try:
+                            return super().get_action()
+                        except Exception as e2:
+                            last_exc = e2
             except (OSError, termios.error) as e:
                 # pyserial's SerialException is an OSError; a flush on a
                 # vanished device raises termios.error, which is NOT.

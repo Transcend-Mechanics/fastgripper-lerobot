@@ -159,14 +159,16 @@ def test_leader_get_action_retries_transient_failures(tmp_path):
 
 
 def test_leader_get_action_gives_up_after_retries(tmp_path):
-    cfg = FastGripperLeaderConfig(port="/dev/null", id="t", calibration_dir=tmp_path,
-                                  read_retries=2, read_retry_delay_s=0)
+    cfg = FastGripperLeaderConfig(port="/dev/definitely-not-here", id="t", calibration_dir=tmp_path,
+                                  read_retries=2, read_retry_delay_s=0, reconnect_timeout_s=0.3)
     leader = FastGripperLeader(cfg)
     leader.bus = MagicMock()
     leader.bus.sync_read.side_effect = ConnectionError("no status packet")
-    with patch.object(type(leader), "is_connected", new=property(lambda self: True)):
+    with patch.object(type(leader), "is_connected", new=property(lambda self: True)), \
+         patch("lerobot_robot_fastgripper.fastgripper_leader.time.sleep"):
         with pytest.raises(ConnectionError):
             leader.get_action()
+    # 2 plain retries, then one reconnect attempt (port never appears) -> no extra read
     assert leader.bus.sync_read.call_count == 2
 
 
@@ -281,3 +283,27 @@ def test_leader_get_action_reconnects_on_termios_error(tmp_path):
     with patch.object(type(leader), "is_connected", new=property(lambda self: True)), \
          patch("lerobot_robot_fastgripper.fastgripper_leader.time.sleep"):
         assert leader.get_action() == {"gripper.pos": 5.0}
+
+
+def test_leader_reconnects_when_timeouts_persist(tmp_path):
+    """Device vanished but reads time out ('no status packet') instead of raising OSError."""
+    cfg = FastGripperLeaderConfig(port="/dev/null", id="t", calibration_dir=tmp_path,
+                                  read_retries=3, read_retry_delay_s=0, reconnect_timeout_s=2.0)
+    leader = FastGripperLeader(cfg)
+    calls = {"n": 0}
+
+    def timeouts_then_ok(_reg):
+        calls["n"] += 1
+        if calls["n"] <= 3:
+            raise ConnectionError("There is no status packet!")
+        return {"gripper": 7.0}
+
+    leader.bus = MagicMock()
+    leader.bus.sync_read.side_effect = timeouts_then_ok
+    leader.bus.motors = {"gripper": None}
+    leader.bus.port_handler.openPort.return_value = True
+    leader.bus.port_handler.setBaudRate.return_value = True
+    with patch.object(type(leader), "is_connected", new=property(lambda self: True)), \
+         patch("lerobot_robot_fastgripper.fastgripper_leader.time.sleep"):
+        assert leader.get_action() == {"gripper.pos": 7.0}
+    leader.bus.port_handler.openPort.assert_called()
