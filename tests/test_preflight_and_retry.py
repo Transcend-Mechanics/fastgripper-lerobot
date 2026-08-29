@@ -204,10 +204,12 @@ def test_leader_get_action_reopens_port_after_device_vanishes(tmp_path):
     leader.bus.motors = {"gripper": None}
     leader.bus.port_handler.openPort.return_value = True
     leader.bus.port_handler.setBaudRate.return_value = True
+    leader.bus.port_handler.is_using = True   # left set by the interrupted transaction
     with patch.object(type(leader), "is_connected", new=property(lambda self: True)), \
          patch("lerobot_robot_fastgripper.fastgripper_leader.time.sleep"):
         assert leader.get_action() == {"gripper.pos": 3.0}
     leader.bus.port_handler.openPort.assert_called()
+    assert leader.bus.port_handler.is_using is False
 
 
 def test_leader_get_action_raises_if_device_never_returns(tmp_path):

@@ -91,6 +91,10 @@ class FastGripperLeader(SOLeader):
                 except Exception:
                     pass
                 if ph.openPort() and ph.setBaudRate(self.bus.port_handler.baudrate):
+                    # The exception interrupted a transaction mid-flight, so the
+                    # SDK's busy flag is still set; every read after reopening
+                    # would fail with "Port is in use!" (live 2026-08-29 13:02).
+                    ph.is_using = False
                     logger.warning("%s: reconnected %s", self, port)
                     return True
             except Exception:
