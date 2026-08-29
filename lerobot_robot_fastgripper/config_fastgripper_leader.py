@@ -16,3 +16,6 @@ class FastGripperLeaderConfig(TeleoperatorConfig, SOLeaderConfig):
 
     read_retries: int = 4
     read_retry_delay_s: float = 0.002
+    # After the leader's USB serial device vanishes, keep trying to reopen
+    # it by path for this long before giving up the session.
+    reconnect_timeout_s: float = 6.0

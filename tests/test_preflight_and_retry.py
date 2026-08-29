@@ -185,3 +185,46 @@ def test_auto_mode_falls_back_to_stall_homing(tmp_path, fallback, expect_home):
             with pytest.raises(RuntimeError):
                 robot.connect()
             home.assert_not_called()
+
+
+def test_leader_get_action_reopens_port_after_device_vanishes(tmp_path):
+    cfg = FastGripperLeaderConfig(port="/dev/null", id="t", calibration_dir=tmp_path,
+                                  read_retry_delay_s=0, reconnect_timeout_s=2.0)
+    leader = FastGripperLeader(cfg)
+    calls = {"n": 0}
+
+    def vanish_then_ok(_reg):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OSError(6, "Device not configured")
+        return {"gripper": 3.0}
+
+    leader.bus = MagicMock()
+    leader.bus.sync_read.side_effect = vanish_then_ok
+    leader.bus.motors = {"gripper": None}
+    leader.bus.port_handler.openPort.return_value = True
+    leader.bus.port_handler.setBaudRate.return_value = True
+    with patch.object(type(leader), "is_connected", new=property(lambda self: True)), \
+         patch("lerobot_robot_fastgripper.fastgripper_leader.time.sleep"):
+        assert leader.get_action() == {"gripper.pos": 3.0}
+    leader.bus.port_handler.openPort.assert_called()
+
+
+def test_leader_get_action_raises_if_device_never_returns(tmp_path):
+    cfg = FastGripperLeaderConfig(port="/dev/definitely-not-here", id="t", calibration_dir=tmp_path,
+                                  read_retry_delay_s=0, reconnect_timeout_s=0.3)
+    leader = FastGripperLeader(cfg)
+    leader.bus = MagicMock()
+    leader.bus.sync_read.side_effect = OSError(6, "Device not configured")
+    with patch.object(type(leader), "is_connected", new=property(lambda self: True)), \
+         patch("lerobot_robot_fastgripper.fastgripper_leader.time.sleep"):
+        with pytest.raises(OSError):
+            leader.get_action()
+
+
+def test_leader_disconnect_swallows_dead_device_errors(tmp_path):
+    cfg = FastGripperLeaderConfig(port="/dev/null", id="t", calibration_dir=tmp_path)
+    leader = FastGripperLeader(cfg)
+    with patch("lerobot.teleoperators.so_leader.SOLeader.disconnect",
+               side_effect=OSError(6, "Device not configured")):
+        leader.disconnect()   # must not raise
