@@ -51,7 +51,14 @@ class FastGripperFollower(SOFollower):
         super().connect(calibrate)
         mode = self.config.gripper_home_mode
         if mode == "auto":
-            self.restore_gripper_from_parked()
+            try:
+                self.restore_gripper_from_parked()
+            except RuntimeError as e:
+                fallback = self.config.gripper_auto_fallback
+                if fallback != "stall":
+                    raise
+                logger.warning("%s -- falling back to stall homing (~20 s).", str(e).split(".")[0])
+                self.home_gripper()
         elif mode == "stall":
             self.home_gripper()
         elif mode == "assume_closed":

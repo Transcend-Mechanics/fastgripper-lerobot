@@ -4,8 +4,10 @@ Subcommands:
     setup      one-time: save ports/ids and establish the gripper zero
     calibrate  arm calibration (wraps lerobot-calibrate for follower/leader)
     jog        keyboard jog + torque survey of the gripper
-    teleop     teleoperate using the saved setup
+    teleop     teleoperate using the saved setup (runs preflight first)
     status     health check: servo, calibration, parked state
+    preflight  go/no-go: ports, servos, voltages, stale turn counters,
+               calibration files, parked state, trigger calibration
 
 Ports/ids are stored once (by `setup`) in ~/.config/fastgripper/config.json,
 so daily use is just `fastgripper teleop`.
@@ -156,15 +158,28 @@ def cmd_teleop(args, extra: list[str]) -> None:
         if not cfg.get(key):
             raise SystemExit(f"Config missing {key} — re-run `fastgripper setup` with "
                              "--leader-port/--leader-id (or pass it to teleop directly).")
+    if not args.skip_preflight:
+        from .preflight import run_preflight
+
+        if not run_preflight(cfg, interactive=False):
+            raise SystemExit("preflight FAILED — fix the items above, or pass --skip-preflight.")
     cmd = ["lerobot-teleoperate",
            "--robot.type=fastgripper_follower",
            f"--robot.port={cfg['follower_port']}",
            f"--robot.id={cfg['follower_id']}",
-           "--teleop.type=so101_leader",
+           "--teleop.type=fastgripper_leader",   # so101_leader + read retries
            f"--teleop.port={cfg['leader_port']}",
            f"--teleop.id={cfg['leader_id']}",
            *extra]
     raise SystemExit(_run_child(cmd))
+
+
+def cmd_preflight(args) -> None:
+    cfg = _resolve_target(args)
+    from .preflight import run_preflight
+
+    ok = run_preflight(cfg, interactive=args.trigger)
+    raise SystemExit(0 if ok else 1)
 
 
 def cmd_status(args) -> None:
@@ -221,9 +236,15 @@ def main() -> None:
     _add_target_args(p, leader=False)
 
     p = sub.add_parser("teleop", help="teleoperate (extra lerobot-teleoperate args pass through)")
+    p.add_argument("--skip-preflight", action="store_true", help="launch without the preflight checks")
     _add_target_args(p)
 
     p = sub.add_parser("status", help="servo/calibration/state health check")
+    _add_target_args(p)
+
+    p = sub.add_parser("preflight", help="go/no-go check of ports, servos, calibration, park, trigger")
+    p.add_argument("--trigger", action="store_true",
+                   help="also verify the trigger reaches 0%% squeezed / 100%% released (prompts you)")
     _add_target_args(p)
 
     args, extra = parser.parse_known_args()
@@ -237,6 +258,8 @@ def main() -> None:
         cmd_teleop(args, extra)
     elif args.cmd == "status":
         cmd_status(args)
+    elif args.cmd == "preflight":
+        cmd_preflight(args)
 
 
 if __name__ == "__main__":

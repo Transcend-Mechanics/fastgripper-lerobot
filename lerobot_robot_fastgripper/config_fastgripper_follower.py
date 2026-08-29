@@ -46,3 +46,11 @@ class FastGripperFollowerConfig(RobotConfig, SOFollowerConfig):
     # Encoder direction that drives the jaws toward the CLOSED hard stop
     # (depends on worm handedness): +1 or -1.
     gripper_close_direction: int = -1
+
+    # What "auto" does when the parked state is missing or the boot reading
+    # does not match it (crashed session, jaws moved by hand while off):
+    #   "stall" - (default) warn, then stall-home against the closed stop
+    #             (~20 s) so the session self-heals instead of refusing.
+    #             Every unclean exit used to cost a manual jog + setup loop.
+    #   "error" - refuse with the diagnostic message (the previous behaviour).
+    gripper_auto_fallback: str = "stall"
