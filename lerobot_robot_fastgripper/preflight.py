@@ -31,7 +31,11 @@ TRIGGER_CLOSED_MAX_PCT = 3.0
 TRIGGER_OPEN_MIN_PCT = 97.0
 
 ARM_IDS = (1, 2, 3, 4, 5, 6)
-ADDR_TORQUE, ADDR_GOAL, ADDR_POS, ADDR_VOLTAGE = 40, 42, 56, 62
+ADDR_HOMING, ADDR_TORQUE, ADDR_GOAL, ADDR_POS, ADDR_VOLTAGE = 31, 40, 42, 56, 62
+
+
+def decode_sign_magnitude(v: int, sign_bit: int = 11) -> int:
+    return -(v & ((1 << sign_bit) - 1)) if v & (1 << sign_bit) else v
 
 
 @dataclass
@@ -39,9 +43,18 @@ class ArmReadings:
     port: str
     port_exists: bool = False
     alive: list[int] = field(default_factory=list)
-    positions: dict[int, int] = field(default_factory=dict)
+    positions: dict[int, int] = field(default_factory=dict)      # reported (offset applied)
+    homing_offsets: dict[int, int] = field(default_factory=dict)  # signed
     voltages: dict[int, float] = field(default_factory=dict)
     open_error: str | None = None
+
+    def encoder(self, i: int) -> int | None:
+        """Raw encoder count. The STS3215 reports `encoder - Homing_Offset`
+        WITHOUT wrapping, so a large offset legitimately pushes the reported
+        value past 4095 near the end of travel -- that is not a stale turn
+        counter (seen live: wrist_roll 5042 with offset -1938 = encoder 3104)."""
+        p = self.positions.get(i)
+        return None if p is None else p + self.homing_offsets.get(i, 0)
 
 
 @dataclass
@@ -96,10 +109,16 @@ def evaluate(r: Readings) -> list[Finding]:
                 out.append(Finding("WARN", f"{name}: servo bus {vmax:.1f} V — above STS3215 12 V rating"))
             else:
                 out.append(Finding("OK", f"{name}: servo bus {vmin:.1f}–{vmax:.1f} V"))
-        stale = {i: p for i, p in arm.positions.items() if i in single_turn and p > SINGLE_TURN_MAX}
+        stale = {i: arm.encoder(i) for i in single_turn
+                 if arm.encoder(i) is not None and arm.encoder(i) > SINGLE_TURN_MAX}
         if stale:
-            out.append(Finding("FAIL", f"{name}: joint(s) {stale} read past one turn — stale turn "
+            out.append(Finding("FAIL", f"{name}: joint(s) {stale} encoder past one turn — stale turn "
                                "counter; power-cycle this arm's servo PSU (calibration would crash)"))
+        overflow = {i: p for i, p in arm.positions.items()
+                    if i in single_turn and p > SINGLE_TURN_MAX and i not in stale}
+        if overflow:
+            out.append(Finding("WARN", f"{name}: joint(s) {overflow} report past 4095 (homing-offset "
+                               "overflow near end of travel; reading clamps, not a fault)"))
 
     if r.leader.port_exists and not r.leader.open_error:
         if r.leader_cal is None:
@@ -173,6 +192,9 @@ def read_arm(port: str) -> ArmReadings:
             pos, r, _ = pk.read2ByteTxRx(ph, i, ADDR_POS)
             if r == scs.COMM_SUCCESS:
                 arm.positions[i] = pos
+            off, r, _ = pk.read2ByteTxRx(ph, i, ADDR_HOMING)
+            if r == scs.COMM_SUCCESS:
+                arm.homing_offsets[i] = decode_sign_magnitude(off)
             v, r, _ = pk.read1ByteTxRx(ph, i, ADDR_VOLTAGE)
             if r == scs.COMM_SUCCESS:
                 arm.voltages[i] = v / 10.0

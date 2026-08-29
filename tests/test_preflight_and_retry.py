@@ -71,10 +71,26 @@ def test_usb_only_voltage_is_no_go():
 
 def test_stale_turn_counter_on_single_turn_joint_is_no_go():
     r = healthy()
-    r.follower.positions[4] = 4925   # the wrist_flex case from 2026-08-27
+    r.follower.positions[4] = 4925   # the wrist_flex case from 2026-08-27 (offset 0)
     f = evaluate(r)
     assert not verdict(f)
     assert any("power-cycle" in x.text for x in f)
+
+
+def test_homing_offset_overflow_is_only_a_warning():
+    r = healthy()
+    r.follower.positions[5] = 5042        # the wrist_roll case from 2026-08-28
+    r.follower.homing_offsets[5] = -1938  # encoder = 3104, inside one turn
+    f = evaluate(r)
+    assert verdict(f)
+    assert any(x.level == "WARN" and "overflow" in x.text for x in f)
+    assert not any("power-cycle" in x.text for x in f)
+
+
+def test_decode_sign_magnitude():
+    from lerobot_robot_fastgripper.preflight import decode_sign_magnitude
+    assert decode_sign_magnitude(1938) == 1938
+    assert decode_sign_magnitude(1938 | (1 << 11)) == -1938
 
 
 def test_multiturn_gripper_above_4095_is_fine():
