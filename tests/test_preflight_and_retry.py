@@ -228,3 +228,31 @@ def test_leader_disconnect_swallows_dead_device_errors(tmp_path):
     with patch("lerobot.teleoperators.so_leader.SOLeader.disconnect",
                side_effect=OSError(6, "Device not configured")):
         leader.disconnect()   # must not raise
+
+
+def test_handshake_retries_a_single_missed_ping(tmp_path):
+    from lerobot_robot_fastgripper import MultiTurnFeetechMotorsBus
+    from lerobot.motors import Motor, MotorNormMode
+    bus = MultiTurnFeetechMotorsBus("/dev/null", {"m1": Motor(1, "sts3215", MotorNormMode.RANGE_M100_100)},
+                                    multiturn_motors=())
+    calls = {"n": 0}
+
+    def flaky(self):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise RuntimeError("motor check failed\n\nMissing motor IDs:\n  - 5 (expected model: 777)")
+
+    with patch("lerobot.motors.feetech.FeetechMotorsBus._handshake", new=flaky), \
+         patch("time.sleep"):
+        bus._handshake()
+    assert calls["n"] == 3
+
+
+def test_handshake_does_not_retry_other_errors(tmp_path):
+    from lerobot_robot_fastgripper import MultiTurnFeetechMotorsBus
+    from lerobot.motors import Motor, MotorNormMode
+    bus = MultiTurnFeetechMotorsBus("/dev/null", {"m1": Motor(1, "sts3215", MotorNormMode.RANGE_M100_100)},
+                                    multiturn_motors=())
+    with patch("lerobot.motors.feetech.FeetechMotorsBus._handshake", side_effect=RuntimeError("firmware mismatch")):
+        with pytest.raises(RuntimeError, match="firmware"):
+            bus._handshake()
