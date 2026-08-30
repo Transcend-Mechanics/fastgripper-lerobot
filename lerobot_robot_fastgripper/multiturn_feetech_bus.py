@@ -43,6 +43,27 @@ class MultiTurnFeetechMotorsBus(FeetechMotorsBus):
     - is_calibrated skips the register round-trip for these motors.
     """
 
+    HANDSHAKE_RETRIES = 4
+    HANDSHAKE_RETRY_DELAY_S = 0.2
+
+    def _handshake(self) -> None:
+        """LeRobot pings every motor once at connect and aborts on a single
+        miss. On this bus a dropped ping is routine (half-duplex, shared USB
+        tree; preflight saw all 6 answer one second earlier while connect
+        found motor 5 'missing', live 2026-08-29). Retry before giving up."""
+        import time as _time
+
+        for attempt in range(self.HANDSHAKE_RETRIES):
+            try:
+                super()._handshake()
+                if attempt:
+                    logger.warning("handshake succeeded after %d retr%s", attempt, "y" if attempt == 1 else "ies")
+                return
+            except RuntimeError as e:
+                if "Missing motor IDs" not in str(e) or attempt == self.HANDSHAKE_RETRIES - 1:
+                    raise
+                _time.sleep(self.HANDSHAKE_RETRY_DELAY_S)
+
     def __init__(self, *args, multiturn_motors: Iterable[str] = (), **kwargs):
         super().__init__(*args, **kwargs)
         self.multiturn_motors = set(multiturn_motors)

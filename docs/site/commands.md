@@ -77,6 +77,32 @@ follower bus, dumps the gripper's key registers (position, temperature,
 Phase, Operating_Mode), and reports whether arm calibration and the parked
 state file exist — with the command to run if either is missing.
 
+## fastgripper preflight
+
+```sh
+fastgripper preflight            # go/no-go, ~5 s, no motion
+fastgripper preflight --trigger  # also prompts you to squeeze/release the trigger
+```
+
+Checks the saved (or `--follower-*/--leader-*`) target: ports present, all
+six servos answer on each arm, servo bus voltage (12 V supply on?), stale
+turn counters (a single-turn joint reading past 4095 — power-cycle the
+arm's supply), calibration files, parked gripper state, and the leader's
+trigger calibration. Prints one line per check and `GO` / `NO-GO`.
+`fastgripper teleop` runs it automatically (`--skip-preflight` to bypass).
+
+## fastgripper usb
+
+```sh
+fastgripper usb soak --seconds 30   # read both arms at 60 Hz concurrently, no motion
+fastgripper usb watch               # log every serial-device drop/return; run DURING teleop
+```
+
+USB link diagnostics for the "teleop dies with *Device not configured*"
+failure — see [USB serial drops](../troubleshooting/usb-serial-drops.md).
+`soak` needs the ports free; `watch` opens nothing and can run alongside a
+session. Both accept `--follower-port/--leader-port` overrides.
+
 ## Using plain LeRobot commands
 
 Everything LeRobot ships works with the robot type `fastgripper_follower`:

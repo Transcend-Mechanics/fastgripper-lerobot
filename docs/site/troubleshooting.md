@@ -10,6 +10,27 @@ It prints the saved config, pings every servo on the follower bus, dumps
 the gripper's key registers, and tells you which of calibration / parked
 state is missing and what command fixes it.
 
+## Teleop dies mid-session ("Device not configured", "no status packet")
+
+The arm's USB serial device left the bus. It is a hub / cable / USB-power
+problem, not the gripper, and it has a dedicated page with the signs, the
+five-minute verification, and the fixes:
+**[USB serial drops](../troubleshooting/usb-serial-drops.md).** Quick check:
+
+```sh
+fastgripper usb watch      # in a spare terminal, 30 s: any VANISHED line = hardware
+```
+
+## The arm froze / faulted after the laptop was left alone
+
+If a session dies with a servo or motor **watchdog / communication-loss**
+fault after the computer sat idle, the laptop went to sleep: the teleop
+loop froze for as long as the machine slept, and the motors' watchdogs
+latched (seen live: a 91 s idle-sleep, arm dead, everything fine on wake).
+`fastgripper teleop` now holds macOS awake for the life of the session
+(`caffeinate -w`). If you drive the robot from your own script, do the
+same — `caffeinate -dims -w $$` — or disable idle sleep in Energy settings.
+
 ## Connection problems
 
 **Port not found / nothing responds.** In order of likelihood:

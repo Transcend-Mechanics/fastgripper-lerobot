@@ -1,0 +1,115 @@
+"""SO-101 leader with retry-tolerant reads.
+
+LeRobot's SOLeader.get_action() does one sync_read and raises on the first
+'no status packet'. On this bench a single garbled transaction is common
+enough (half-duplex bus, shared USB tree) that it ended sessions several
+times in one afternoon while every servo was perfectly healthy. The read is
+idempotent, so retry a few times before giving up — the same treatment the
+follower already gets in FastGripperFollower.get_observation().
+
+A vanished serial device ([Errno 6] Device not configured) -- the CH343
+re-enumerating when its bus-powered hub sags under the follower's load
+(seen live 2026-08-27/29 on two different leaders) -- is handled too: the
+port is reopened by path for up to `reconnect_timeout_s` and the read
+resumes, instead of ending the session. The follower holds its last goal
+in the meantime.
+"""
+
+import logging
+import os
+import termios
+import time
+
+from lerobot.teleoperators.so_leader import SOLeader
+
+from .config_fastgripper_leader import FastGripperLeaderConfig
+
+logger = logging.getLogger(__name__)
+
+
+class FastGripperLeader(SOLeader):
+    config_class = FastGripperLeaderConfig
+    name = "so_leader"  # share calibration files with so101_leader
+
+    def __init__(self, config: FastGripperLeaderConfig):
+        super().__init__(config)
+        self.config = config
+
+    def get_action(self) -> dict[str, float]:
+        last_exc: Exception | None = None
+        retries = max(1, int(self.config.read_retries))
+        self._reconnected_once = False
+        for attempt in range(retries):
+            try:
+                action = super().get_action()
+                if attempt:
+                    logger.warning(
+                        "%s: recovered leader read after %d retr%s",
+                        self, attempt, "y" if attempt == 1 else "ies",
+                    )
+                return action
+            except ConnectionError as e:
+                last_exc = e
+                time.sleep(self.config.read_retry_delay_s)
+                # A vanished device often shows up as read TIMEOUTS ("no
+                # status packet") before the fd errors (live 2026-08-29
+                # 13:05). If plain retries are exhausted, treat it as a
+                # possible re-enumeration and try a reconnect once.
+                if attempt == retries - 1 and not self._reconnected_once:
+                    self._reconnected_once = True
+                    if self._reconnect():
+                        try:
+                            return super().get_action()
+                        except Exception as e2:
+                            last_exc = e2
+            except (OSError, termios.error) as e:
+                # pyserial's SerialException is an OSError; a flush on a
+                # vanished device raises termios.error, which is NOT.
+                last_exc = e
+                if self._reconnect():
+                    continue
+                break
+        assert last_exc is not None
+        raise last_exc
+
+    def disconnect(self) -> None:
+        """A leader whose USB device is gone must not take the follower's
+        orderly shutdown with it: lerobot-teleoperate calls teleop.disconnect()
+        BEFORE robot.disconnect(), so an exception here skips the follower's
+        park-and-save (seen live: park ran from __del__ at interpreter exit,
+        failed, and cleared the parked state)."""
+        try:
+            super().disconnect()
+        except Exception as e:  # OSError / termios.error / ConnectionError
+            logger.warning("%s: disconnect skipped cleanup (device gone: %s)", self, e)
+            try:
+                self.bus.port_handler.closePort()
+            except Exception:
+                pass
+
+    def _reconnect(self) -> bool:
+        """Reopen the serial port by path after the device re-enumerated."""
+        port = self.config.port
+        deadline = time.time() + self.config.reconnect_timeout_s
+        logger.warning("%s: serial device lost -- reopening %s", self, port)
+        ph = self.bus.port_handler
+        while time.time() < deadline:
+            time.sleep(0.25)
+            if not os.path.exists(port):
+                continue
+            try:
+                try:
+                    ph.closePort()
+                except Exception:
+                    pass
+                if ph.openPort() and ph.setBaudRate(self.bus.port_handler.baudrate):
+                    # The exception interrupted a transaction mid-flight, so the
+                    # SDK's busy flag is still set; every read after reopening
+                    # would fail with "Port is in use!" (live 2026-08-29 13:02).
+                    ph.is_using = False
+                    logger.warning("%s: reconnected %s", self, port)
+                    return True
+            except Exception:
+                continue
+        logger.error("%s: could not reopen %s within %.0fs", self, port, self.config.reconnect_timeout_s)
+        return False
