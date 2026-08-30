@@ -44,9 +44,26 @@ def _run_child(cmd: list[str]) -> int:
         proc = subprocess.Popen(
             cmd, preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL)
         )
+        _keep_awake(proc.pid)
         return proc.wait()
     finally:
         signal.signal(signal.SIGINT, prev)
+
+
+def _keep_awake(pid: int) -> None:
+    """Hold the host awake while `pid` lives (macOS `caffeinate -w`).
+
+    An idle-sleeping laptop freezes the teleop loop for as long as it sleeps;
+    servos with a CAN/serial watchdog then latch a fault (seen live
+    2026-08-29: a 91 s sleep, arm dead). Tied to the child's pid so it
+    needs no timers and exits with the session."""
+    if sys.platform != "darwin":
+        return
+    try:
+        subprocess.Popen(["caffeinate", "-dims", "-w", str(pid)],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
 
 
 def _load_config(require: bool = True) -> dict:

@@ -21,6 +21,16 @@ five-minute verification, and the fixes:
 fastgripper usb watch      # in a spare terminal, 30 s: any VANISHED line = hardware
 ```
 
+## The arm froze / faulted after the laptop was left alone
+
+If a session dies with a servo or motor **watchdog / communication-loss**
+fault after the computer sat idle, the laptop went to sleep: the teleop
+loop froze for as long as the machine slept, and the motors' watchdogs
+latched (seen live: a 91 s idle-sleep, arm dead, everything fine on wake).
+`fastgripper teleop` now holds macOS awake for the life of the session
+(`caffeinate -w`). If you drive the robot from your own script, do the
+same — `caffeinate -dims -w $$` — or disable idle sleep in Energy settings.
+
 ## Connection problems
 
 **Port not found / nothing responds.** In order of likelihood:

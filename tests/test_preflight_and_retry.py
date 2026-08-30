@@ -324,3 +324,39 @@ def test_usb_subcommands_parse():
     out = subprocess.run([sys.executable, "-m", "lerobot_robot_fastgripper.cli", "usb", "--help"],
                          capture_output=True, text=True)
     assert out.returncode == 0 and "soak" in out.stdout and "watch" in out.stdout
+
+
+def test_run_child_holds_mac_awake_for_the_child(monkeypatch):
+    import subprocess
+    from lerobot_robot_fastgripper import cli
+    spawned = []
+
+    class FakeProc:
+        pid = 4242
+        def wait(self):
+            return 0
+
+    def fake_popen(cmd, **kw):
+        spawned.append(cmd)
+        return FakeProc()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(cli.sys, "platform", "darwin")
+    assert cli._run_child(["lerobot-teleoperate"]) == 0
+    assert ["caffeinate", "-dims", "-w", "4242"] in spawned
+
+
+def test_run_child_skips_caffeinate_off_mac(monkeypatch):
+    import subprocess
+    from lerobot_robot_fastgripper import cli
+    spawned = []
+
+    class FakeProc:
+        pid = 1
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: spawned.append(cmd) or FakeProc())
+    monkeypatch.setattr(cli.sys, "platform", "linux")
+    cli._run_child(["x"])
+    assert not any(c and c[0] == "caffeinate" for c in spawned)
